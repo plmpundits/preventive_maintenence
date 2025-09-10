@@ -184,7 +184,7 @@ df = df.set_index("timestamp").sort_index()
 
 import plotly.express as px
 
-fig = px.line(df_non_index, x='timestamp', y='fc_pressure', title='Fox Creek Accumulator')
+fig = px.line(df_non_index, x='timestamp', y='fc_pressure', title='Accumulator')
 #fig.update_layout(barcornerradius=15, paper_bgcolor="white")
 fig.update_layout(
     xaxis_title="Timestamp"
