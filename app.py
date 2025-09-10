@@ -180,8 +180,7 @@ print("\n Unique Values :\n", df.nunique())
 
 # Set index for time-series ops
 df = df.set_index("timestamp").sort_index()
-df.head()
-df.plot(grid=True)
+
 
 import plotly.express as px
 
