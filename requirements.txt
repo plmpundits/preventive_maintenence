@@ -1,0 +1,6 @@
+steamlit
+pandas
+pillow
+streamlit-aggrid
+numpy
+ploty
