@@ -4,8 +4,8 @@ import numpy as np
 from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, JsCode
 from datetime import datetime, timedelta
 import plotly.express as px
-from PIL import Image 
-
+from PIL import Image
+import base64
 
 
 
@@ -21,12 +21,44 @@ st.logo(logo, size="large")
 st.markdown(
     """
     <style>
+                   /* Watermark behind content */
+        .stApp::before {
+            content: "";
+            position: fixed;
+            top: 30%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: url("data:image/jpeg;base64,{logo_base64}")
+                        no-repeat center center;
+            background-size: 300px;
+            width: 300px;
+            height: 300px;
+            opacity: 0.08;        /* Light watermark */
+            z-index: -1;          /* Place behind content */
+            pointer-events: none; /* Don’t block interactions */
+        }
+
+        /* Make sure main background is transparent so watermark shows */
+        .stApp {
+            background: transparent !important;
+        }
         /* Remove top padding/margin */
      .block-container {
         padding-top: 1rem; /* Adjust this value as needed, 0rem for minimal top space */
      }
      div[data-testid="stSidebarContent"] {
             padding-top: 0rem; 
+    }
+        /* Wrap header text (multiple selectors to cover different ag-theme classes) */
+    .ag-header-cell-label .ag-header-cell-text,
+    .ag-header-cell-label .ag-header-cell-text span,
+    .ag-header-cell-text {
+        white-space: normal !important;
+        overflow: visible !important;
+        text-overflow: clip !important;
+        line-height: 1.15 !important;
+        display: block !important;
+        word-wrap: break-word;
     }
     </style>
     """,
@@ -142,6 +174,7 @@ with tab1:
         # --- AgGrid Configuration ---
         gb = GridOptionsBuilder.from_dataframe(df_filtered)
         gb.configure_columns(["row_id", "diff"], hide=True)
+        gb.configure_columns()
         gb.configure_column(
             "Error/Warning",
             cellStyle=JsCode("""
@@ -160,15 +193,24 @@ with tab1:
             "Error Confirmation",
             editable=True,
             cellEditor="agSelectCellEditor",
+            headerTooltip="Select Error or Ignore",
             cellEditorParams={"values": ["Select","Error", "Ignore"]}
         )
         # Rootcause Remarks editable
         gb.configure_column(
             "Root Cause Remarks",
             editable=True,
+            wrapHeaderText=True,
+            headerTooltip="Provide details on the cause of the issue",
             cellStyle=JsCode("""
             function(params) {
-                return {'backgroundColor': '#e0fdff'};  // Light blue
+                return {
+                            'backgroundColor': '#e0fdff',
+                            'word-wrap': 'break-word',
+                            
+                             
+                        };  // Light blue
+                             
             }
             """)
         )
@@ -186,8 +228,11 @@ with tab1:
             }
         };
         """)
-        gb.configure_column("Severity Status", cellStyle=cell_style_jscode)
-        gb.configure_column("SNOW Ticket", editable=False)
+        gb.configure_column("Severity Status",
+                             headerTooltip="Indicates anomaly severity like High, Low, or Sudden Change",
+                            cellStyle=cell_style_jscode
+                            )
+        gb.configure_column("SNOW Ticket",  headerTooltip="Automatically created when Error Confirmation = Error", editable=False)
         gb.configure_grid_options(pagination=True, paginationPageSize=50)
         grid_options = gb.build()
 
@@ -220,37 +265,116 @@ with tab1:
 with tab2:
     st.subheader("Live Feed Analysis")
     # Filter out ignored rows for plotting
-    df_plot = st.session_state.df[st.session_state.df['Error Confirmation'] != "Ignore"].copy()
-    
-    if df_plot.empty:
-        st.warning("No data available for time series plot!")
-    else:
-        # Convert to Python datetime for slider
-        df_plot['Time'] = pd.to_datetime(df_plot['Time'])
-        min_time = df_plot['Time'].min().to_pydatetime()
-        max_time = df_plot['Time'].max().to_pydatetime()
-        
-        fig = px.line(df_plot, x='Time', y='Pressure', title='Accumulator')
-        #fig.update_layout(barcornerradius=15, paper_bgcolor="white")
-        fig.update_layout(
-            xaxis_title="Timestamp"
-        )
-        fig.update_layout(
-            yaxis_title="Accumulator"
-        )
-        fig.update_xaxes(
-            rangeslider_visible=True,
-            rangeslider_bgcolor="rgb(62, 76, 102)",
-            rangeselector=dict(
-                buttons=list([
-                    dict(count=1, label='5M', step='minute', stepmode='backward'),
-                    dict(count=1, label='1H', step='hour', stepmode='backward'),
-                    dict(count=1, label='1D', step='day', stepmode='backward'),
-                    dict(count=1, label='1M', step='month', stepmode='backward'),
-                    dict(step='all')
-                ])
-            )
-        )
+    df = pd.read_csv("dataset/fox_creek_25-csv.csv")
 
-        with st.container(border=True):
-            st.plotly_chart(fig, use_container_width=True)
+    df = df.rename(columns={
+        "t_stamp": "timestamp",
+        "Well Pads/Fox Creek 25SE/12-63 25-2-1/Heater Treater/Gas Meter/Today Flow" : "fc_pressure"
+    })
+
+    # convert timestamp
+    df["timestamp"] = pd.to_datetime(df["timestamp"])
+
+    df = df.drop('Unnamed: 3', axis=1)
+
+    df_non_index = df
+
+    df.info()
+
+
+    print("Rows  : ", df.shape[0])
+    print("Columns  : ", df.shape[1])
+    print("\nFeatures  :\n", df.columns.to_list())
+    print("\nMissing Values :\n", df.isnull().any())
+    print("\n Unique Values :\n", df.nunique())
+
+    # Set index for time-series ops
+    #df = df.set_index("timestamp").sort_index()
+        
+    fig = px.line(df, x='timestamp', y='fc_pressure', title='Accumulator')
+    #fig.update_layout(barcornerradius=15, paper_bgcolor="white")
+    fig.update_layout(
+        xaxis_title="Timestamp"
+    )
+    fig.update_layout(
+        yaxis_title="Accumulator"
+    )
+    fig.update_xaxes(
+        rangeslider_visible=True,
+        #rangeslider_bgcolor="rgb(62, 76, 102)",
+        rangeslider_bgcolor="rgb(230, 234, 241)",
+        rangeselector=dict(
+            buttons=list([
+                dict(count=1, label='5M', step='minute', stepmode='backward'),
+                dict(count=1, label='1H', step='hour', stepmode='backward'),
+                dict(count=1, label='1D', step='day', stepmode='backward'),
+                dict(count=1, label='1M', step='month', stepmode='backward'),
+                dict(step='all')
+            ])
+        )
+    )
+
+    with st.container(border=True):
+        st.plotly_chart(fig, use_container_width=True)
+
+    df = pd.read_csv("dataset/Casing_pressure-anomaly-csv.csv")
+
+   # df = pd.read_csv("dataset/2sd-casing-pressure.csv")
+
+    df = df.rename(columns={
+        "t_stamp": "timestamp",
+        "Well Pads/Pronghorn KO/12HNB/Well Head/Well Casing Pressure/Value" : "casing_pressure"
+    })
+
+    # convert timestamp
+    df["timestamp"] = pd.to_datetime(df["timestamp"])
+
+    df_non_index = df
+
+    #df.to_csv("timestamp-corrected.csv")
+    df['anomaly_percent'] = ((df['casing_pressure'] - df['casing_pressure'].std()) / df['casing_pressure']) * 100
+
+
+    # Set index for time-series ops
+    df = df.set_index("timestamp").sort_index()
+
+    max_valid_pressure = 300
+
+    df_non_index['sensor_malfunction'] = df_non_index['casing_pressure'] > max_valid_pressure
+
+    print("\nSensor Error: ", df_non_index['sensor_malfunction'].sum())
+
+    #df_non_index.head()
+    #df_non_index.describe()
+
+    df_clean = df_non_index[~df_non_index["sensor_malfunction"]].copy()
+
+
+
+    fig = px.line(df_clean, x='timestamp', y='casing_pressure', title='Casing Pressure')
+    fig.update_layout(
+        title={'text': "Casing Pressure"}
+    )
+    fig.update_layout(
+        xaxis_title="Timestamp"
+    )
+    fig.update_layout(
+        yaxis_title="Casing Pressure"
+    )
+    fig.update_xaxes(
+        rangeslider_visible=True,
+        rangeslider_bordercolor= "#111",
+        rangeslider_bgcolor="rgb(230, 234, 241)",
+        rangeselector=dict(
+            buttons=list([
+                dict(count=1, label='5M', step='minute', stepmode='backward'),
+                dict(count=1, label='1H', step='hour', stepmode='backward'),
+                dict(count=1, label='1D', step='day', stepmode='backward'),
+                dict(count=1, label='1M', step='month', stepmode='backward'),
+                dict(step='all')
+            ])
+        )
+    )
+
+    with st.container(border=True):
+        st.plotly_chart(fig, use_container_width=True)
